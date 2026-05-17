@@ -30,10 +30,10 @@ jobs:
           docker push 637675605421.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:latest
 
       - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ecs-task-def.json
-          service: my-flask-app-service
-          cluster: my-flask-app-cluster
+          service: flask-service
+          cluster: flask-cluster1
           wait-for-service-stability: true
           
