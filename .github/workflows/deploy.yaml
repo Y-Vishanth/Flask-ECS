@@ -33,7 +33,7 @@ jobs:
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ecs-task-def.json
-          service: flask-service
+          service: flask-task-service-ee55ylp4
           cluster: flask-cluster1
           wait-for-service-stability: true
           
