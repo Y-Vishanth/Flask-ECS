@@ -45,7 +45,7 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: ecs-task-def.json
-          container-name: my-flask-app
+          container-name: flask-container
           image: ${{ env.IMAGE_URI }}
 
       - name: Deploy to Amazon ECS
