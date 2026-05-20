@@ -27,7 +27,7 @@ jobs:
       - name: Deploy to Amazon ECS
         run: |
           aws ecs describe-task-definition   --task-definition flask-task   --region us-east-1   --query 'taskDefinition'   > ecs-task-def.json
-        image uri: 637675605421.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:latest
+        
       - name: Fill in the new image ID in the Amazon ECS task definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
