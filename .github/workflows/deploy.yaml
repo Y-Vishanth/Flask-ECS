@@ -2,56 +2,53 @@ name: Deploy to ECS
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main]
   workflow_dispatch:
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout source
         uses: actions/checkout@v3
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v3
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: us-east-1   # change if your ECS cluster is in another region
 
       - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
 
-      - name: Build, tag, and push image
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          REPOSITORY: my-flask-app
         run: |
-          IMAGE_URI=637675605421.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:${{ github.sha }}
-          docker build -t $IMAGE_URI .
-          docker push $IMAGE_URI
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          docker build -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Fetch latest ECS task definition
-        run: |
-          aws ecs describe-task-definition \
-            --task-definition flask-task \
-            --region us-east-1 \
-            --query 'taskDefinition' \
-            > full-task-def.json
-          jq '{family, containerDefinitions, executionRoleArn, networkMode, requiresCompatibilities, cpu, memory}' full-task-def.json > ecs-task-def.json
-
-      - name: Render new task definition
+      - name: Fill in the new image ID in the Amazon ECS task definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: ecs-task-def.json
-          container-name: flask-container
-          image: ${{ env.IMAGE_URI }}
+          task-definition: ecs-task-def.json   # keep a clean JSON in repo
+          container-name: my-flask-app
+          image: ${{ steps.build-image.outputs.image }}
 
-      - name: Deploy to Amazon ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          task-definition: ${{ steps.task-def.outputs.rendered-task-definition }}
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
           service: flask-task-service-ee55ylp4
           cluster: flask-cluster1
           wait-for-service-stability: true
