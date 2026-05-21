@@ -1,37 +1,60 @@
-name: Deploy to ECS
+name: Deploy Flask Service to ECS
 on:
   push:
     branches:
       - main
-jobs:  
- deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+  workflow_dispatch:
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment: main
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
       - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v1
-      - name: Build, tag, and push image
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker Image
         run: |
-          docker build -t my-flask-app .
-          docker tag my-flask-app:latest 637675605421.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:latest
-          docker push 637675605421.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:latest
-      - name: Deploy to Amazon ECS
+          IMAGE="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:latest"
+          docker build -t $IMAGE ./flask-app
+          docker push $IMAGE
+
+      - name: Fetch Current ECS Task Definition
         run: |
-          aws ecs describe-task-definition   --task-definition flask-task   --region us-east-1   --query 'taskDefinition'   > ecs-task-def.json
-        image uri: 637675605421.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:latest
-      - name: Fill in the new image ID in the Amazon ECS task definition
-        id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ecs-task-def.json
-          container-name: flask-container
-          image: 637675605421.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:latest
+          aws ecs describe-task-definition \
+            --task-definition flask-task \
+            --region us-east-1 > task-definition.json
+
+      - name: Update ECS Task Definition with New Image
+        run: |
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/my-flask-app:latest"
+          jq --arg IMAGE "$IMAGE_URI" '.taskDefinition.containerDefinitions[0].image = $IMAGE' task-definition.json \
+          | jq '.taskDefinition | {family, containerDefinitions, executionRoleArn, taskRoleArn, networkMode, requiresCompatibilities, cpu, memory}' \
+          > new-task-def.json
+
+      - name: Register New ECS Task Definition
+        run: |
+          aws ecs register-task-definition --cli-input-json file://new-task-def.json > register-task-def-out.json
+          TASK_REVISION=$(jq -r '.taskDefinition.revision' register-task-def-out.json)
+          echo "TASK_REVISION=$TASK_REVISION" >> $GITHUB_ENV
+
+      - name: Deploy to ECS Service
+        run: |
+          aws ecs update-service \
+            --cluster flask-cluster1 \
+            --service flask-task-service-ee55ylp4 \
+            --task-definition flask-task:$TASK_REVISION \
+            --region us-east-1
