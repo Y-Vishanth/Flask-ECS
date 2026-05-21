@@ -28,8 +28,8 @@ jobs:
 
       - name: Build and Push Docker Image
         run: |
-          IMAGE="$637675605421.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:latest"
-          docker build -t $IMAGE ./flask-app
+          IMAGE="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:latest"
+          docker build -t $IMAGE .
           docker push $IMAGE
 
       - name: Fetch Current ECS Task Definition
